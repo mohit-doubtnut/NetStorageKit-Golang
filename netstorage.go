@@ -46,13 +46,10 @@ func NewNetstorage(hostname, keyname, key string, ssl bool) *Netstorage {
 }
 
 // Only for upload action. (Used by _request func)
-func _ifUploadAction(kwargs map[string]string) (*io.Reader, error) {
+func _ifUploadAction(kwargs map[string]string, localsource *[]byte) (*io.Reader, error) {
 	var data io.Reader
 	if kwargs["action"] == "upload" {
-		bArr, err := ioutil.ReadFile(kwargs["source"])
-		if err != nil {
-			return nil, err
-		}
+		bArr := *localsource
 
 		data = bytes.NewReader(bArr)
 	}
@@ -96,7 +93,7 @@ func _getBody(kwargs map[string]string, response *http.Response) (string, error)
 // Create the authorization headers with Netstorage struct values then
 // request to the Netstorage hostname, and return the response,
 // the body string and the error.
-func (ns *Netstorage) _request(kwargs map[string]string) (*http.Response, string, error) {
+func (ns *Netstorage) _request(kwargs map[string]string, localsource *[]byte) (*http.Response, string, error) {
 	var err error
 
 	nsPath := kwargs["path"]
@@ -117,7 +114,7 @@ func (ns *Netstorage) _request(kwargs map[string]string) (*http.Response, string
 	mac.Write([]byte(acsAuthData + signString))
 	acsAuthSign := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 
-	data, err := _ifUploadAction(kwargs)
+	data, err := _ifUploadAction(kwargs, localsource)
 	if err != nil {
 		return nil, "", err
 	}
@@ -153,7 +150,7 @@ func (ns *Netstorage) Dir(nsPath string) (*http.Response, string, error) {
 		"action": "dir&format=xml",
 		"method": "GET",
 		"path":   nsPath,
-	})
+	}, nil)
 }
 
 // Download returns the string "Download done" when the download completes.
@@ -178,7 +175,7 @@ func (ns *Netstorage) Download(path ...string) (*http.Response, string, error) {
 		"method":      "GET",
 		"path":        nsSource,
 		"destination": localDestination,
-	})
+	}, nil)
 }
 
 // Du returns the disk usage information for a directory
@@ -187,7 +184,7 @@ func (ns *Netstorage) Du(nsPath string) (*http.Response, string, error) {
 		"action": "du&format=xml",
 		"method": "GET",
 		"path":   nsPath,
-	})
+	}, nil)
 }
 
 // Stat returns the information about an object structure
@@ -196,7 +193,7 @@ func (ns *Netstorage) Stat(nsPath string) (*http.Response, string, error) {
 		"action": "stat&format=xml",
 		"method": "GET",
 		"path":   nsPath,
-	})
+	}, nil)
 }
 
 // Mkdir creates an empty directory
@@ -205,7 +202,7 @@ func (ns *Netstorage) Mkdir(nsPath string) (*http.Response, string, error) {
 		"action": "mkdir",
 		"method": "POST",
 		"path":   nsPath,
-	})
+	}, nil)
 }
 
 // Rmdir deletes an empty directory
@@ -214,7 +211,7 @@ func (ns *Netstorage) Rmdir(nsPath string) (*http.Response, string, error) {
 		"action": "rmdir",
 		"method": "POST",
 		"path":   nsPath,
-	})
+	}, nil)
 }
 
 // Mtime changes a file’s mtime
@@ -223,7 +220,7 @@ func (ns *Netstorage) Mtime(nsPath string, mtime int64) (*http.Response, string,
 		"action": fmt.Sprintf("mtime&format=xml&mtime=%d", mtime),
 		"method": "POST",
 		"path":   nsPath,
-	})
+	}, nil)
 }
 
 // Delete deletes an object/symbolic link
@@ -232,7 +229,7 @@ func (ns *Netstorage) Delete(nsPath string) (*http.Response, string, error) {
 		"action": "delete",
 		"method": "POST",
 		"path":   nsPath,
-	})
+	}, nil)
 }
 
 // QuickDelete deletes a directory (i.e., recursively delete a directory tree)
@@ -242,7 +239,7 @@ func (ns *Netstorage) QuickDelete(nsPath string) (*http.Response, string, error)
 		"action": "quick-delete&quick-delete=imreallyreallysure",
 		"method": "POST",
 		"path":   nsPath,
-	})
+	}, nil)
 }
 
 // Rename renames a file or symbolic link.
@@ -251,7 +248,7 @@ func (ns *Netstorage) Rename(nsTarget, nsDestination string) (*http.Response, st
 		"action": "rename&destination=" + url.QueryEscape(nsDestination),
 		"method": "POST",
 		"path":   nsTarget,
-	})
+	}, nil)
 }
 
 // Symlink creates a symbolic link.
@@ -260,7 +257,7 @@ func (ns *Netstorage) Symlink(nsTarget, nsDestination string) (*http.Response, s
 		"action": "symlink&target=" + url.QueryEscape(nsTarget),
 		"method": "POST",
 		"path":   nsDestination,
-	})
+	}, nil)
 }
 
 // Upload uploads an object.
@@ -269,25 +266,32 @@ func (ns *Netstorage) Symlink(nsTarget, nsDestination string) (*http.Response, s
 // If you put the directory path on "nsDestination" parameter, that filename
 // will be the "localSource" parameter filename.
 // Note that you can upload only a file, not a directory.
-func (ns *Netstorage) Upload(localSource, nsDestination string) (*http.Response, string, error) {
-	s, err := os.Stat(localSource)
+func (ns *Netstorage) Upload(localSource *[]byte, nsDestination string) (*http.Response, string, error) {
+	// s, err := os.Stat(localSource)
 
-	if err != nil {
-		return nil, "", err
-	}
+	// if err != nil {
+	// 	return nil, "", err
+	// }
 
-	if s.Mode().IsRegular() {
+	// if s.Mode().IsRegular() {
+	// 	if strings.HasSuffix(nsDestination, "/") {
+	// 		nsDestination = nsDestination + path.Base(localSource)
+	// 	}
+	// } else {
+	// 	return nil, "", fmt.Errorf("[NetstorageError] You should upload a file, not %s", localSource)
+	// }
+
+	if len(*localSource) > 0 {
 		if strings.HasSuffix(nsDestination, "/") {
-			nsDestination = nsDestination + path.Base(localSource)
+			nsDestination = nsDestination + "index"
 		}
 	} else {
-		return nil, "", fmt.Errorf("[NetstorageError] You should upload a file, not %s", localSource)
+		return nil, "", fmt.Errorf("[NetstorageError] You should upload a bytes array, not %v", localSource)
 	}
 
 	return ns._request(map[string]string{
 		"action": "upload",
 		"method": "PUT",
-		"source": localSource,
 		"path":   nsDestination,
-	})
+	}, localSource)
 }
